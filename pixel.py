@@ -20,7 +20,7 @@ def clean():
     pixels.show()
 
 def fill(color):
-    LOGGER.debug(f"Neopixel fill({color})") 
     if color:
+        LOGGER.debug(f"Neopixel fill({color})") 
         pixels.fill(color)
         pixels.show()
