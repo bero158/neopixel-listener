@@ -32,11 +32,11 @@ class Sender:
     def start(self):
         self.run = True
         if not self.senderThread:
-            self.senderThread = threading.Thread(target=self.queueSenderThread, daemon=True)
+            self.senderThread = threading.Thread(target=self.senderThread, daemon=True)
             self.senderThread.start()
         else:
             if not self.senderThread.is_alive():
-                self.senderThread = threading.Thread(target=self.queueSenderThread, daemon=True)
+                self.senderThread = threading.Thread(target=self.senderThread, daemon=True)
                 self.senderThread.start()
 
     
@@ -55,7 +55,7 @@ class Sender:
                     self.send(qcopy)
 
 
-    def queueSenderThread(self):
+    def senderThread(self):
         while self.run: 
             try:
                 LOGGER.debug(f"Connecting to {self.address}")
