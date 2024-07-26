@@ -2,35 +2,35 @@ from multiprocessing.connection import Client
 import config
 import logging as LOGGER
 import threading
-
+import time
+from collections import deque
 LOGGER.basicConfig(level=config.LOGLEVEL)
-
 
 class Sender:
     def __init__(self):
         self.run = False
         self.senderThread = None
-        self.queue=[]
+        self.queue = deque(maxlen=1024)
         self.senderSleeper = 1 # wait 1s in sender thread
         self.cond = threading.Condition()
         self.lock = threading.Lock()
         self.conn = None
-
+        self.address = ('localhost', config.PORT)     # family is deduced to be 'AF_INET'
+        
     def stop(self):
         self.run = False
         with self.cond: 
             self.cond.notify_all()
 
     def __enter__(self):
-        self.connect()
+        self.start()
         return self
     
     def __exit__(self, *args):
-        self.disconnect()
+        self.stop()
     
-    def startThread(self):
-        if not self.run:
-            return
+    def start(self):
+        self.run = True
         if not self.senderThread:
             self.senderThread = threading.Thread(target=self.queueSenderThread, daemon=True)
             self.senderThread.start()
@@ -39,51 +39,47 @@ class Sender:
                 self.senderThread = threading.Thread(target=self.queueSenderThread, daemon=True)
                 self.senderThread.start()
 
-
-    def connect(self):
-        address = ('localhost', config.PORT)     # family is deduced to be 'AF_INET'
-        self.conn = Client(address, authkey = config.AUTHKEY)
-        self.run = True
-        self.startThread()
     
-
-    def disconnect(self):
-        if self.senderThread:
-            self.stop()
-
-        if self.conn:
-            self.conn.close()
-
-    def queueSenderThread(self):
+    def sendQueue(self):
+        if not self.conn:
+            return
         with self.cond:
             while self.run: 
                 self.cond.wait()
-                if not self.run:
+                if not self.run: 
                     break
                 if self.queue:
                     with self.lock:
-                        qcopy = self.queue
-                        self.queue = []
-                    try:
-                        self.send(qcopy)
-                    except (ConnectionError) as e:
-                        LOGGER.error(f"Disconnected {e.strerror}")
-                        break
+                        qcopy = self.queue.copy()
+                        self.queue.clear()
+                    self.send(qcopy)
+
+
+    def queueSenderThread(self):
+        while self.run: 
+            try:
+                LOGGER.debug(f"Connecting to {self.address}")
+                self.conn = Client(self.address, authkey = config.AUTHKEY)
+                self.sendQueue()
+                self.conn.close()
+            except ConnectionError as e:
+                LOGGER.error(f"Unable to connect to {self.address} {e.strerror}")
+                time.sleep(1) # wait 1s then try connect again
+        
+    def notifyThread(self):
+        with self.cond: 
+            self.cond.notify_all()
 
     def addQueue(self,pixels):
         if self.conn and self.run:
             with self.lock:
                 self.queue.extend(pixels)
-            with self.cond: 
-                self.cond.notify_all()
-
+            self.notifyThread()
     def addQueueOne(self,pixel):
         if self.conn and self.run:
             with self.lock:
                 self.queue.append(pixel)
-            with self.cond: 
-                self.cond.notify_all()
-
+            self.notifyThread()
 
     def send(self,pixels):
         buffer = bytes()

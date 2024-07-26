@@ -31,17 +31,17 @@ def main():
                     pixel.clean()
                     while conn:
                         try:
-                            bytes = conn.recv_bytes()
+                            datab = conn.recv_bytes()
                         except (EOFError, ConnectionResetError) as e:
                             LOGGER.error(f"Connection closed {e}") 
                             conn = None
                             pass #ignore
-                        LOGGER.debug(f"Data recieved {bytes}") 
+                        LOGGER.debug(f"Data recieved {datab}") 
 
-                        length = len(bytes)
+                        length = len(datab)
                         data = []
                         for n in range(0,length,4):
-                            pixelB = (bytes[n:n+4])
+                            pixelB = (datab[n:n+4])
                             if len(pixelB) == 4:
                                 data.append((pixelB[0],tuple(pixelB[1:])))
                         pixel.set(data)
