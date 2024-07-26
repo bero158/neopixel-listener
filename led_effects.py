@@ -116,7 +116,7 @@ class EffectCount(Effect):
             else:
                 led = i
 
-            self.sender.addQueueOne((led,self.color))
+            self.sender.addQueue((led,self.color))
             time.sleep(self.timing)
             if not self.run:
                 break

@@ -32,11 +32,11 @@ class Sender:
     def start(self):
         self.run = True
         if not self.senderThread:
-            self.senderThread = threading.Thread(target=self.senderThread, daemon=True)
+            self.senderThread = threading.Thread(target=self.sender, daemon=True)
             self.senderThread.start()
         else:
             if not self.senderThread.is_alive():
-                self.senderThread = threading.Thread(target=self.senderThread, daemon=True)
+                self.senderThread = threading.Thread(target=self.sender, daemon=True)
                 self.senderThread.start()
 
     
@@ -55,7 +55,7 @@ class Sender:
                     self.send(qcopy)
 
 
-    def senderThread(self):
+    def sender(self):
         while self.run: 
             try:
                 LOGGER.debug(f"Connecting to {self.address}")
@@ -73,20 +73,17 @@ class Sender:
     def addQueue(self,pixels):
         if self.conn and self.run:
             with self.lock:
-                self.queue.extend(pixels)
+                if isinstance(pixels,list):
+                    self.queue.extend(pixels)
+                else:
+                    self.queue.append(pixels)
             self.notifyThread()
-    def addQueueOne(self,pixel):
-        if self.conn and self.run:
-            with self.lock:
-                self.queue.append(pixel)
-            self.notifyThread()
-
+    
     def send(self,pixels):
         buffer = bytes()
         for pixel in pixels:
             buffer += pixel[0].to_bytes()
             buffer += bytes(pixel[1])
         self.conn.send_bytes(buffer)
-        # self.conn.send(data)
         LOGGER.debug(f"Sent {buffer}") 
 
