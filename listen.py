@@ -32,19 +32,18 @@ def main():
                     while conn:
                         try:
                             datab = conn.recv_bytes()
+                            LOGGER.debug(f"Data recieved {datab}") 
+                            length = len(datab)
+                            data = []
+                            for n in range(0,length,4):
+                                pixelB = (datab[n:n+4])
+                                if len(pixelB) == 4:
+                                    data.append((pixelB[0],tuple(pixelB[1:])))
+                            pixel.set(data)
                         except (EOFError, ConnectionResetError) as e:
                             LOGGER.error(f"Connection closed {e}") 
                             conn = None
                             pass #ignore
-                        LOGGER.debug(f"Data recieved {datab}") 
-
-                        length = len(datab)
-                        data = []
-                        for n in range(0,length,4):
-                            pixelB = (datab[n:n+4])
-                            if len(pixelB) == 4:
-                                data.append((pixelB[0],tuple(pixelB[1:])))
-                        pixel.set(data)
         except KeyboardInterrupt:
             pass
 

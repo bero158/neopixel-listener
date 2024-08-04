@@ -5,7 +5,7 @@ import threading
 
 
 class Effect:
-    def __init__(self, sender, buttonRange = config.BUTTON_LED_ALL):
+    def __init__(self, sender, buttonRange = range(0,8)):
         self.run = True #tells the effect to be running
         self.buttonRange = buttonRange
         self.sender = sender
@@ -108,15 +108,36 @@ class EffectRainbow(Effect):
 
 class EffectCount(Effect):
     direction = -1 #-1 = Down, 1 = Up
+    pos = 0
+    def step(self, i):
+        if self.direction == -1:
+            led = self.buttonRange.stop - i - 1 + self.buttonRange.start
+        else:
+            led = i
+        self.sender.addQueue((led,self.color))
+
+    def reset(self):
+        if self.direction > 0:
+            self.pos = self.buttonRange.start
+        else:
+            self.pos = self.buttonRange.stop
+    
+    def next(self):
+        self.step(self.pos)
+        if self.direction > 0:
+            self.pos += 1
+        else:
+            self.pos -= 1
+        if self.pos < self.buttonRange.start:
+            self.pos = self.buttonRange.start
+        if self.pos > self.buttonRange.stop:
+            self.pos = self.buttonRange.stop
+        
+            
     def goOnce(self):
         LOGGER.debug(f"running countdown {self.buttonRange.start} - {self.buttonRange.stop}")
         for i in self.buttonRange:
-            if self.direction == -1:
-                led = self.buttonRange.stop - i - 1 + self.buttonRange.start
-            else:
-                led = i
-
-            self.sender.addQueue((led,self.color))
+            self.step(i)
             time.sleep(self.timing)
             if not self.run:
                 break

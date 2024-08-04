@@ -1,15 +1,17 @@
 # debuging
+# DUMMY = False
 DUMMY = True
 LOGLEVEL = 'DEBUG'
 
 
 #neopixel settings
-# import board
-# import neopixel
 NEOPIXEL_GPIO = 1 #board.D18
 NEOPIXEL_LED = 16
 if not DUMMY:
+    import board
+    import neopixel
     NEOPIXEL_ORDER = neopixel.RGB
+    NEOPIXEL_GPIO = board.D18
     
 
 #comm settings

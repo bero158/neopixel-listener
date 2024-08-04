@@ -1,10 +1,9 @@
 from multiprocessing.connection import Client
-import config
+from . import config
 import logging as LOGGER
 import threading
 import time
 from collections import deque
-LOGGER.basicConfig(level=config.LOGLEVEL)
 
 class Sender:
     def __init__(self):
@@ -82,8 +81,8 @@ class Sender:
     def send(self,pixels):
         buffer = bytes()
         for pixel in pixels:
-            buffer += pixel[0].to_bytes()
+            buffer += bytes((pixel[0],))
             buffer += bytes(pixel[1])
         self.conn.send_bytes(buffer)
-        LOGGER.debug(f"Sent {buffer}") 
+        # LOGGER.debug(f"Sent {buffer}") 
 
