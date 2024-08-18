@@ -84,5 +84,4 @@ class Sender:
             buffer += bytes((pixel[0],))
             buffer += bytes(pixel[1])
         self.conn.send_bytes(buffer)
-        # LOGGER.debug(f"Sent {buffer}") 
 
