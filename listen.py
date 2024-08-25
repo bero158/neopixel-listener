@@ -1,3 +1,6 @@
+#!/usr/bin/python3
+# -*- coding: utf-8 -*-
+
 import logging as LOGGER
 import config
 if config.DUMMY:
