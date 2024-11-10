@@ -1,5 +1,6 @@
 from multiprocessing.connection import Client
-from . import config
+# from . import config
+import config
 import logging as LOGGER
 import threading
 import time
@@ -14,7 +15,7 @@ class Sender:
         self.cond = threading.Condition()
         self.lock = threading.Lock()
         self.conn = None
-        self.address = ('localhost', config.PORT)     # family is deduced to be 'AF_INET'
+        self.address = (config.ADDRESS, config.PORT)     # family is deduced to be 'AF_INET'
         
     def stop(self):
         self.run = False
@@ -70,7 +71,7 @@ class Sender:
             self.cond.notify_all()
 
     def addQueue(self,pixels):
-        if self.conn and self.run:
+        if  self.run:
             with self.lock:
                 if isinstance(pixels,list):
                     self.queue.extend(pixels)
