@@ -1,13 +1,13 @@
 import config
 import logging as LOGGER
 import time
-from sender import Sender
+from led_effects import PrivilegedSender
 import led_effects as effects
 
 LOGGER.basicConfig(level=config.LOGLEVEL)
 
 def main():
-    with Sender() as sender:
+    with PrivilegedSender() as sender:
         """
         fillLeft = Effect(sender,config.LED_LEFT)
         fillLeft.fill((32,16,0))
@@ -125,6 +125,12 @@ def main():
         
         
         srRight.run(threaded = True)
+        time.sleep(2)
+        fillLeft = effects.Effect(sender,config.LED_LEFT,privilegeLevel=PrivilegedSender.Level.HIGH)
+        fillLeft.lock()
+        fillLeft.fill((32,16,0))
+        time.sleep(2)
+        fillLeft.unlock()
         time.sleep(5)
 
 if __name__ == "__main__":

@@ -70,7 +70,7 @@ class Sender:
         with self.cond: 
             self.cond.notify_all()
 
-    def addQueue(self,pixels):
+    def addQueue(self,pixels : tuple | list[tuple]):
         if  self.run:
             with self.lock:
                 if isinstance(pixels,list):

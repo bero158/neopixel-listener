@@ -4,9 +4,10 @@ import threading
 import config
 import collections
 from sender import Sender
+from enum import Enum
 
 # Neopixel gama correction. Taken from neopixel example
-gamma8 = [
+gamma8 = (
     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  1,  1,  1,
     1,  1,  1,  1,  1,  1,  1,  1,  1,  2,  2,  2,  2,  2,  2,  2,
@@ -22,27 +23,57 @@ gamma8 = [
   115,117,119,120,122,124,126,127,129,131,133,135,137,138,140,142,
   144,146,148,150,152,154,156,158,160,162,164,167,169,171,173,175,
   177,180,182,184,186,189,191,193,196,198,200,203,205,208,210,213,
-  215,218,220,223,225,228,231,233,236,239,241,244,247,249,252,255]
+  215,218,220,223,225,228,231,233,236,239,241,244,247,249,252,255)
 
 def calcColor(color : tuple, brightness : int):
     brightness = gamma8[brightness]
     return (color[0] * brightness // 255, color[1] * brightness // 255, color[2] * brightness // 255)
 
-class Locker:
-    locked : list[int]
+class PrivilegedSender(Sender):
+    priorityMap : list[int]
 
-    def __init(self):
-        self.locked=[0]*len(config.LED_ALL)
+    class Level(Enum):
+        LOW = 0
+        HIGH = 1
+        ALARM = 2
     
-    def lock(self, leds : range, level : int):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.priorityMap=[PrivilegedSender.Level.LOW]*len(config.LED_ALL)
+    
+    def setPriority(self, leds : range, reqLevel : Level, myLevel : Level):
+        if reqLevel.value > myLevel.value: return #not allowed
+        if not self.isAllowedLeds(leds, myLevel): return #not allowed
         for i in leds:
-            self.locked[i] = level
+            self.priorityMap[i] = reqLevel
+    
+    def isAllowedPixels(self,pixels : list[tuple],level : Level):
+        for pixel in pixels:
+                ledPrivLevel = self.priorityMap[pixel[0]]
+                if ledPrivLevel.value > level.value:
+                    return False
+        return True
+    
+    def isAllowedLeds(self,leds : range,level : Level):
+        for led in leds:
+                ledPrivLevel = self.priorityMap[led]
+                if ledPrivLevel.value > level.value:
+                    return False
+        return True
+    def addQueue(self,pixels : tuple | list[tuple], level : Level = Level.LOW):
+        """Add queue with privilege level check"""
+        if isinstance(pixels,list):
+            if not self.isAllowedPixels(pixels, level): return
+        else:
+            ledPrivLevel = self.priorityMap[pixels[0]]
+            if ledPrivLevel.value > level.value:  return
+        super().addQueue(pixels)
 
 
 class Effect:
     running : bool # running state
     leds : range # physical LED mapping
-    sender : Sender # sender class
+    sender : PrivilegedSender # sender class
     repeat : int # count of iterations
     syncWith : object # Effect class multithreading synchronisation with other thread
     ledLength : int # Length of my part of the strip. Calculated from leds
@@ -53,7 +84,9 @@ class Effect:
     mirror : bool = False # mirroring to other side
     timing : float # one step delay
     stepping : int # how many steps in one step
-    def __init__(self, sender : Sender, physLeds : range, syncWith : object = None):
+    privilegeLevel : PrivilegedSender.Level
+
+    def __init__(self, sender : PrivilegedSender, physLeds : range, syncWith : object = None, privilegeLevel = PrivilegedSender.Level.LOW ):
         """
         sender = sender class. Must be created and set before.
         leds = Physical mappintto button LED
@@ -70,8 +103,12 @@ class Effect:
         self.timing = 0
         self.stepping = 1
         self.backColor = (0,0,0)
-        
-    def setDuration(self, duration_s):
+        self.privilegeLevel = privilegeLevel
+    
+    def addQueueP(self, pixels : tuple | list[tuple]):
+        self.sender.addQueue(pixels, self.privilegeLevel)
+
+    def setDuration(self, duration_s : int):
         """Duration of one whole cycle. For threaded output"""
         self.timing = duration_s / len(self.leds)
     
@@ -118,11 +155,16 @@ class Effect:
         """Fill witn one color. For clearing etc."""
         color = color if color else self.color
         pixels = [(i,color) for i in self.leds]
-        self.sender.addQueue(pixels)
+        self.addQueueP(pixels)
 
     def clear(self):
         """clears the led strip"""
         self.fill(self.backColor)
+
+    def lock(self):
+        self.sender.setPriority(self.leds, self.privilegeLevel, self.privilegeLevel)
+    def unlock(self):
+        self.sender.setPriority(self.leds, PrivilegedSender.Level.LOW, self.privilegeLevel)
         
 
 
@@ -195,7 +237,7 @@ class EffectRainbow(Effect):
                 pixel_index = (i * 256 // len(self.leds)) + j
                 pixels.append((i,self.wheel(pixel_index & 255)))
             else:
-                self.sender.addQueue(pixels)
+                self.addQueueP(pixels)
                 time.sleep(self.timing)
                 if not self.running:
                     break
@@ -232,8 +274,8 @@ class LogicalMapping(Effect):
         if not color:
             color = self.color
         physLed = self.log2physLed(led)
-        self.sender.addQueue((physLed,color))
-
+        self.addQueueP((physLed,color))
+        
 class EffectCount(LogicalMapping):
     direction : int = -1 #-1 = Down, 1 = Up
     pos : int = 0
@@ -276,7 +318,7 @@ class EffectShiftRegister(LogicalMapping):
     register : collections.deque
     injectQueue : list
     def __init__(self, *args, **kwargs):
-        super(LogicalMapping,self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.reset()
         self.injectQueue = []
 
@@ -329,5 +371,5 @@ class EffectDisco(EffectShiftRegister):
         for _ in range(len(self.leds)//self.stepping):
             self.inject(self.color,self.stepping)
             self.inject(self.backColor,self.stepping)
-        super(EffectShiftRegister,self).run(*args, **kwargs)
+        super().run(*args, **kwargs)
         
