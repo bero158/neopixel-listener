@@ -69,54 +69,87 @@ class PrivilegedSender(Sender):
             if ledPrivLevel.value > level.value:  return
         super().addQueue(pixels)
 
-
 class Effect:
-    running : bool # running state
     leds : range # physical LED mapping
     sender : PrivilegedSender # sender class
-    repeat : int # count of iterations
-    syncWith : object # Effect class multithreading synchronisation with other thread
     ledLength : int # Length of my part of the strip. Calculated from leds
     logLeds : int # Logical leds (starting with 0)
     color : tuple # (R,G,B) LED color
     backColor : tuple # (R,G,B) LED color for clearing etc.
-    tempColor : tuple # (R,G,B) LED temporary color applied at next round only.
-    mirror : bool = False # mirroring to other side
-    timing : float # one step delay
-    stepping : int # how many steps in one step
     privilegeLevel : PrivilegedSender.Level
 
-    def __init__(self, sender : PrivilegedSender, physLeds : range, syncWith : object = None, privilegeLevel = PrivilegedSender.Level.LOW ):
+    def __init__(self, sender : PrivilegedSender, physLeds : range, privilegeLevel = PrivilegedSender.Level.LOW ):
+        """
+        sender = sender class. Must be created and set before.
+        leds = Physical mappintto button LED
+        
+        """
+        self.leds = physLeds
+        self.sender = sender
+        self.ledLength = len(self.leds)    
+        self.logLeds = range( 0, self.ledLength, physLeds.step )
+        self.backColor = (0,0,0)
+        self.color = (0,0,0)
+        self.privilegeLevel = privilegeLevel
+
+    def fill(self,color : tuple = None):
+        """Fill witn one color. For clearing etc."""
+        color = color if color else self.color
+        pixels = [(i,color) for i in self.leds]
+        self.addQueueP(pixels)
+
+    def addQueueP(self, pixels : tuple | list[tuple]):
+        self.sender.addQueue(pixels, self.privilegeLevel)
+
+
+    def clear(self):
+        """clears the led strip"""
+        self.fill(self.backColor)
+
+    def lock(self):
+        self.sender.setPriority(self.leds, self.privilegeLevel, self.privilegeLevel)
+    def unlock(self):
+        self.sender.setPriority(self.leds, PrivilegedSender.Level.LOW, self.privilegeLevel)
+
+class EffectAnimated(Effect):
+    running : bool # running state
+    repeat : float # count of iterations. Decimal number means portion of the last step
+    syncWith : object # Effect class multithreading synchronisation with other thread
+    ledLength : int # Length of my part of the strip. Calculated from leds
+    tempColor : tuple # (R,G,B) LED temporary color applied at next round only.
+    mirror : int # Nr. of mirrors in effect. Currently only 1 is implemented
+    timing : float # one step delay
+    stepping : int # how many steps in one step
+
+    def __init__(self, *args, syncWith : object = None, **kwargs ):
         """
         sender = sender class. Must be created and set before.
         leds = Physical mappintto button LED
         syncWith = Synchronisation between worker threads. If used sleep in thread is replaced with waiting."""
         self.running = True #tells the effect to be running
-        self.leds = physLeds
-        self.sender = sender
         self.repeat = 1
         self.syncWith = syncWith
-        self.ledLength = len(self.leds)    
-        self.logLeds = range( 0, self.ledLength, physLeds.step )
         self.tempColor = None
-        self.mirror = False
+        self.mirror = 0
         self.timing = 0
         self.stepping = 1
-        self.backColor = (0,0,0)
-        self.privilegeLevel = privilegeLevel
+        super().__init__(*args, **kwargs)
     
-    def addQueueP(self, pixels : tuple | list[tuple]):
-        self.sender.addQueue(pixels, self.privilegeLevel)
-
-    def setDuration(self, duration_s : int):
+    
+    @property
+    def duration(self):
+        ...
+    @duration.setter
+    def duration(self, duration_s : int):
         """Duration of one whole cycle. For threaded output"""
         self.timing = duration_s / len(self.leds)
     
     def go(self):
         """Thread main cycle. Don't call directly. Started through goThreaded"""
-        iter = self.repeat
+        self.running = True
+        iter = int(self.repeat)
         while (iter > 0 or self.repeat == -1) and self.running: # -1 = forever
-            self.goOnce()
+            self.goOnce(1 if iter>0 else self.repeat%1) # 1 normal run and dec. portion at last run
             if self.repeat > 0:
                 iter -= 1
         self.running = False
@@ -125,10 +158,11 @@ class Effect:
         """Math should be here. Implement in inherited classes"""
         ...
     
-    def goOnce(self):
+    def goOnce(self, portion : float = 1):
         LOGGER.debug(f"running {self.leds.start} - {self.leds.stop}")
-        steps = len(self.logLeds)//2 if self.mirror else len(self.logLeds)
-        steps = steps//self.stepping
+        steps = len(self.logLeds)//(self.mirror+1)
+        steps = steps//self.stepping if portion == 1 else int((steps*portion)//self.stepping)
+        
         for _ in range(steps):
             self.next(self.stepping)
             time.sleep(self.timing)
@@ -150,39 +184,43 @@ class Effect:
     def stop(self):
         """Stops the effect thread"""
         self.running = False
-    
-    def fill(self,color : tuple = None):
-        """Fill witn one color. For clearing etc."""
-        color = color if color else self.color
-        pixels = [(i,color) for i in self.leds]
-        self.addQueueP(pixels)
 
-    def clear(self):
-        """clears the led strip"""
-        self.fill(self.backColor)
 
-    def lock(self):
-        self.sender.setPriority(self.leds, self.privilegeLevel, self.privilegeLevel)
-    def unlock(self):
-        self.sender.setPriority(self.leds, PrivilegedSender.Level.LOW, self.privilegeLevel)
+class EffectSerial(EffectAnimated):
+    """Runs effect after effect"""
+    effects : EffectAnimated
+    def __init__(self, effects : EffectAnimated = [], *args, **kwargs):
+        super().init(*args, **kwargs)
+        self.effects : EffectAnimated = effects
+
+    def goOnce(self, portion : float = 1):
+        steps = steps//self.stepping if portion == 1 else int((steps*portion)//self.stepping)
         
+        for effect in self.effects:
+            effect.goOnce(1)
+            if not self.running:
+                break
+    
+    def stop(self):
+        """Stops the effect thread"""
+        self.running = False
+        for effect in self.effects:
+            effect.stop()
 
-
-
-class EffectShine(Effect):
+class EffectShine(EffectAnimated):
     def goOnce(self):
         """one passthrough, waiting"""
         # pdb.set_trace()
         LOGGER.debug("EffectShine On")
         self.fill((self.color))
         time.sleep(self.timing)
-        self.fill((0,0,0))
+        self.fill(self.backColor)
         LOGGER.debug("EffectShine Off")
     
     def setDuration(self, duration_s):
         self.timing = duration_s
 
-class EffectFade(Effect):
+class EffectFade(EffectAnimated):
     bRange : range # brightness range
     currentBrightness : int # for sharing between threads
     def goOnce(self):
@@ -196,11 +234,16 @@ class EffectFade(Effect):
             time.sleep(self.timing)
             if not self.running:
                 break
+    @property
+    def duration(self):
+        ...
 
-    def setDuration(self, duration_s):
+    @duration.setter
+    def duration(self, duration_s : int):
+        """Duration of one whole cycle. For threaded output"""
         self.timing = duration_s / len(self.bRange)
     
-class EffectFlash(Effect):
+class EffectFlash(EffectAnimated):
     def startFade(self,bRange : range, color : tuple):
         self.effect = EffectFade(self.sender, physLeds = self.leds, syncWith = self.syncWith)
         self.effect.timing = self.timing / 2
@@ -228,7 +271,7 @@ class EffectFlash(Effect):
         self.timing = duration_s / len(self.bRange)
     
 
-class EffectRainbow(Effect):
+class EffectRainbow(EffectAnimated):
     def goOnce(self):
         LOGGER.debug("running rainbow cycle")
         for j in range(255):
@@ -263,7 +306,7 @@ class EffectRainbow(Effect):
             b = int(255 - pos * 3)
         return (r, g, b)
 
-class LogicalMapping(Effect):
+class LogicalMapping(EffectAnimated):
     def log2physLed(self, logLed : int) -> int:
         logLed = logLed*self.leds.step+self.offset
         pos = logLed%self.ledLength
