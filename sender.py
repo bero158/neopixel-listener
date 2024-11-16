@@ -1,6 +1,6 @@
 from multiprocessing.connection import Client
-# from . import config
-import config
+from . import config
+#import config
 import logging as LOGGER
 import threading
 import time
@@ -70,7 +70,7 @@ class Sender:
         with self.cond: 
             self.cond.notify_all()
 
-    def addQueue(self,pixels : tuple | list[tuple]):
+    def addQueue(self,pixels):
         if  self.run:
             with self.lock:
                 if isinstance(pixels,list):

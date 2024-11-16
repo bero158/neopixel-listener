@@ -8,7 +8,7 @@ LOGLEVEL = 'DEBUG' if DEBUG else 'INFO'
 #comm settings
 AUTHKEY = b'password' # communication password
 PORT = 6000
-LISTENER_IP = '192.168.1.89' # for remote access in debug mode
+LISTENER_IP = '192.168.1.103' # for remote access in debug mode
 # LISTENER_IP = '127.0.0.1' # for local development
 ADDRESS = LISTENER_IP if DEBUG else 'localhost'
 

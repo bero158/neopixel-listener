@@ -72,6 +72,16 @@ def main():
         time.sleep(1)
         """
         time.sleep(0.5) #wait for sender thread init
+        
+        countdownTop = effects.EffectDisco(sender,config.LED_TOP)
+        countdownTop.direction = 1
+        countdownTop.mirror = False
+        countdownTop.offset = 0
+        countdownTop.color = (0,64,0)
+        countdownTop.backColor = (64,0,0)
+        countdownTop.duration = 10
+        countdownTop.run()
+        
         countdownLeft = effects.EffectCount(sender,config.LED_LEFT)
         countdownLeft.direction = 1
         countdownLeft.mirror = True
@@ -112,6 +122,7 @@ def main():
         srRight.duration = 5
         srRight.repeat = -1
         srRight.stepping = 3
+        srRight.run(threaded = True)
         
         srLeft = effects.EffectDisco(sender,config.LED_LEFT, syncWith = srRight)
         srLeft.direction = 1
@@ -123,8 +134,14 @@ def main():
         srLeft.stepping = 3
         srLeft.run(threaded = True)
         
+        srTop = effects.EffectDisco(sender,config.LED_TOP, syncWith = srRight)
+        srTop.color=(255,0,255)
+        srTop.backColor=(0,255,0)
+        srTop.duration = 5
+        srTop.repeat = -1
+        srTop.stepping = 2
+        srTop.run(threaded = True)
         
-        srRight.run(threaded = True)
         time.sleep(2)
         fillLeft = effects.EffectAnimated(sender,config.LED_LEFT,privilegeLevel=PrivilegedSender.Level.HIGH)
         fillLeft.lock()

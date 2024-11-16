@@ -10,15 +10,16 @@ else:
 from multiprocessing.connection import Listener
 import time
 import signal
-
+import sys
 
 LOGGER.basicConfig(level=config.LOGLEVEL)
 
 
 def exit_gracefully(signum, frame):
     LOGGER.info(f"Neopixel Terminating") 
-    pixel.fill((0,0,0)) #turn all leds off
-    quit()
+    pixel.clean()
+    pixel.close()
+    sys.exit()
 
 
 def listen(listener : Listener):
@@ -57,19 +58,20 @@ def main():
     time.sleep(0.3)
     pixel.fill((0,0,255)) # check blue
     time.sleep(0.3)
-    
+    pixel.clean()
     address = (config.ADDRESS, config.PORT)
     with Listener(address, authkey = config.AUTHKEY, family="AF_INET" ) as listener:
         try:
             while True:
                 LOGGER.info(f"Neopixel Listener is waiting for connection at {listener.address}") 
-                pixel.fill((0,0,0)) # set soft white as waiting for initial connection indicator
+                pixel.clean() # set soft white as waiting for initial connection indicator
                 listen(listener)
         except KeyboardInterrupt:
             pass
 
 
     pixel.clean()
+    
     LOGGER.info(f"Closed") 
 
 main()

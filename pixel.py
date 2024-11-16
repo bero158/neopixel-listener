@@ -1,4 +1,4 @@
-import board
+
 import neopixel
 import config
 import logging as LOGGER
@@ -24,3 +24,6 @@ def fill(color):
         LOGGER.debug(f"Neopixel fill({color})") 
         pixels.fill(color)
         pixels.show()
+
+def close():
+    pixels.deinit()

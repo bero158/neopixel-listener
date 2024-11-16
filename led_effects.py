@@ -1,9 +1,11 @@
 import logging as LOGGER
 import time
 import threading
-import config
+# import config
+from . import config
 import collections
-from sender import Sender
+# from sender import Sender
+from .sender import Sender
 from enum import Enum
 
 # Neopixel gama correction. Taken from neopixel example
@@ -41,11 +43,12 @@ class PrivilegedSender(Sender):
         super().__init__(*args, **kwargs)
         self.priorityMap=[PrivilegedSender.Level.LOW]*len(config.LED_ALL)
     
-    def setPriority(self, leds : range, reqLevel : Level, myLevel : Level):
-        if reqLevel.value > myLevel.value: return #not allowed
-        if not self.isAllowedLeds(leds, myLevel): return #not allowed
+    def setPriority(self, leds : range, reqLevel : Level, myLevel : Level) -> bool: 
+        if reqLevel.value > myLevel.value: return False #not allowed
+        if not self.isAllowedLeds(leds, myLevel): return False #not allowed
         for i in leds:
             self.priorityMap[i] = reqLevel
+        return True
     
     def isAllowedPixels(self,pixels : list[tuple],level : Level):
         for pixel in pixels:
@@ -60,7 +63,7 @@ class PrivilegedSender(Sender):
                 if ledPrivLevel.value > level.value:
                     return False
         return True
-    def addQueue(self,pixels : tuple | list[tuple], level : Level = Level.LOW):
+    def addQueue(self, pixels, level : Level = Level.LOW):
         """Add queue with privilege level check"""
         if isinstance(pixels,list):
             if not self.isAllowedPixels(pixels, level): return
@@ -76,7 +79,8 @@ class Effect:
     logLeds : int # Logical leds (starting with 0)
     color : tuple # (R,G,B) LED color
     backColor : tuple # (R,G,B) LED color for clearing etc.
-    privilegeLevel : PrivilegedSender.Level
+    privilegeLevel : PrivilegedSender.Level #My locking level
+    lockedByMe : bool #I set the lock. I'm unlocking.
 
     def __init__(self, sender : PrivilegedSender, physLeds : range, privilegeLevel = PrivilegedSender.Level.LOW ):
         """
@@ -91,6 +95,7 @@ class Effect:
         self.backColor = (0,0,0)
         self.color = (0,0,0)
         self.privilegeLevel = privilegeLevel
+        self.lockedByMe = False
 
     def fill(self,color : tuple = None):
         """Fill witn one color. For clearing etc."""
@@ -98,7 +103,7 @@ class Effect:
         pixels = [(i,color) for i in self.leds]
         self.addQueueP(pixels)
 
-    def addQueueP(self, pixels : tuple | list[tuple]):
+    def addQueueP(self, pixels):
         self.sender.addQueue(pixels, self.privilegeLevel)
 
 
@@ -107,9 +112,11 @@ class Effect:
         self.fill(self.backColor)
 
     def lock(self):
-        self.sender.setPriority(self.leds, self.privilegeLevel, self.privilegeLevel)
+        self.lockedByMe = self.sender.setPriority(self.leds, self.privilegeLevel, self.privilegeLevel)
     def unlock(self):
-        self.sender.setPriority(self.leds, PrivilegedSender.Level.LOW, self.privilegeLevel)
+        if self.lockedByMe:
+            self.sender.setPriority(self.leds, PrivilegedSender.Level.LOW, self.privilegeLevel)
+            self.lockedByMe = False
 
 class EffectAnimated(Effect):
     running : bool # running state
@@ -120,7 +127,10 @@ class EffectAnimated(Effect):
     mirror : int # Nr. of mirrors in effect. Currently only 1 is implemented
     timing : float # one step delay
     stepping : int # how many steps in one step
-
+    offset : int = 0 # starting position
+    direction : int = 1 #-1 = Down, 1 = Up
+    pos : int = 0 #position of the counter etc.
+    
     def __init__(self, *args, syncWith : object = None, **kwargs ):
         """
         sender = sender class. Must be created and set before.
@@ -133,15 +143,21 @@ class EffectAnimated(Effect):
         self.mirror = 0
         self.timing = 0
         self.stepping = 1
+        self._duration_s = 0
+        self.offset = 0
+        self.direction = 1
+        self.pos = 0
         super().__init__(*args, **kwargs)
     
     
     @property
     def duration(self):
-        ...
+        return self._duration_s
+    
     @duration.setter
     def duration(self, duration_s : int):
         """Duration of one whole cycle. For threaded output"""
+        self._duration_s = duration_s
         self.timing = duration_s / len(self.leds)
     
     def go(self):
@@ -149,9 +165,12 @@ class EffectAnimated(Effect):
         self.running = True
         iter = int(self.repeat)
         while (iter > 0 or self.repeat == -1) and self.running: # -1 = forever
-            self.goOnce(1 if iter>0 else self.repeat%1) # 1 normal run and dec. portion at last run
+            self.lock()
+            self.goOnce(1 if iter>0 or self.repeat <0 else self.repeat%1) # 1 normal run and dec. portion at last run
+            self.unlock()
             if self.repeat > 0:
                 iter -= 1
+            
         self.running = False
 
     def next(self, steps : int = 1):
@@ -208,22 +227,26 @@ class EffectSerial(EffectAnimated):
             effect.stop()
 
 class EffectShine(EffectAnimated):
-    def goOnce(self):
+    def goOnce(self,portion : float = 1):
         """one passthrough, waiting"""
-        # pdb.set_trace()
         LOGGER.debug("EffectShine On")
         self.fill((self.color))
         time.sleep(self.timing)
         self.fill(self.backColor)
         LOGGER.debug("EffectShine Off")
     
-    def setDuration(self, duration_s):
+    @property
+    def duration(self):
+        ...
+    @duration.setter
+    def duration(self, duration_s : int):
+        """Duration of one whole cycle. For threaded output"""
         self.timing = duration_s
 
 class EffectFade(EffectAnimated):
     bRange : range # brightness range
     currentBrightness : int # for sharing between threads
-    def goOnce(self):
+    def goOnce(self,portion : float = 1):
         """one passthrough, waiting"""
         for brightness in self.bRange:
             self.currentBrightness = brightness
@@ -244,20 +267,21 @@ class EffectFade(EffectAnimated):
         self.timing = duration_s / len(self.bRange)
     
 class EffectFlash(EffectAnimated):
+    duration : float    
     def startFade(self,bRange : range, color : tuple):
         self.effect = EffectFade(self.sender, physLeds = self.leds, syncWith = self.syncWith)
-        self.effect.timing = self.timing / 2
         self.effect.bRange = bRange
+        self.effect.duration = self.duration / 2
         self.effect.color = color
         self.effect.go()
 
-    def goOnce(self):
+    def goOnce(self,portion : float = 1):
         oldtempColor = self.tempColor 
         color = self.color if oldtempColor == None else oldtempColor
         self.startFade(self.bRange, color)
         if self.running:
-           # back = range(self.bRange.stop - self.bRange.step, self.bRange.start - self.bRange.step, 0 - self.bRange.step)
-           back = reversed(self.bRange)
+           back = range(self.bRange.stop - self.bRange.step, self.bRange.start - self.bRange.step, 0 - self.bRange.step)
+           # back = reversed(self.bRange)
            self.startFade(back, color)
         if oldtempColor: #only when temp color was previously set.
             self.tempColor = None 
@@ -267,12 +291,9 @@ class EffectFlash(EffectAnimated):
         if self.effect:
             self.effect.stop()
 
-    def setDuration(self, duration_s):
-        self.timing = duration_s / len(self.bRange)
     
-
 class EffectRainbow(EffectAnimated):
-    def goOnce(self):
+    def goOnce(self,portion : float = 1):
         LOGGER.debug("running rainbow cycle")
         for j in range(255):
             pixels = []
@@ -320,9 +341,7 @@ class LogicalMapping(EffectAnimated):
         self.addQueueP((physLed,color))
         
 class EffectCount(LogicalMapping):
-    direction : int = -1 #-1 = Down, 1 = Up
-    pos : int = 0
-    offset : int = 0 # starting position
+    
     
     
     
