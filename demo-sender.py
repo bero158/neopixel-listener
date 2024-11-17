@@ -1,4 +1,4 @@
-import config
+import config 
 import logging as LOGGER
 import time
 from led_effects import PrivilegedSender
@@ -7,7 +7,7 @@ import led_effects as effects
 LOGGER.basicConfig(level=config.LOGLEVEL)
 
 def main():
-    with PrivilegedSender() as sender:
+    with PrivilegedSender(authkey=config.AUTHKEY,address=(config.ADDRESS,config.PORT),leds=config.LED_ALL) as sender:
         """
         fillLeft = Effect(sender,config.LED_LEFT)
         fillLeft.fill((32,16,0))

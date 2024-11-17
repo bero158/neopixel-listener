@@ -60,7 +60,8 @@ def main():
     time.sleep(0.3)
     pixel.clean()
     address = (config.ADDRESS, config.PORT)
-    with Listener(address, authkey = config.AUTHKEY, family="AF_INET" ) as listener:
+    LOGGER.info(f"Address: {address}") 
+    with Listener(address = address, authkey = config.AUTHKEY, family="AF_INET" ) as listener:
         try:
             while True:
                 LOGGER.info(f"Neopixel Listener is waiting for connection at {listener.address}") 

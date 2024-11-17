@@ -1,11 +1,11 @@
 import logging as LOGGER
 import time
 import threading
-# import config
-from . import config
 import collections
-# from sender import Sender
-from .sender import Sender
+if __package__:
+    from pbneopixel.sender import Sender
+else:
+    from sender import Sender
 from enum import Enum
 
 # Neopixel gama correction. Taken from neopixel example
@@ -39,9 +39,9 @@ class PrivilegedSender(Sender):
         HIGH = 1
         ALARM = 2
     
-    def __init__(self, *args, **kwargs):
+    def __init__(self, leds : range, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.priorityMap=[PrivilegedSender.Level.LOW]*len(config.LED_ALL)
+        self.priorityMap=[PrivilegedSender.Level.LOW]*len(leds)
     
     def setPriority(self, leds : range, reqLevel : Level, myLevel : Level) -> bool: 
         if reqLevel.value > myLevel.value: return False #not allowed
@@ -110,6 +110,10 @@ class Effect:
     def clear(self):
         """clears the led strip"""
         self.fill(self.backColor)
+
+    def stop(self):
+        """for compatibility with pibooth_ledstrip"""
+        self.clear()
 
     def lock(self):
         self.lockedByMe = self.sender.setPriority(self.leds, self.privilegeLevel, self.privilegeLevel)

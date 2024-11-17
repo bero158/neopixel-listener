@@ -1,13 +1,11 @@
 from multiprocessing.connection import Client
-from . import config
-#import config
 import logging as LOGGER
 import threading
 import time
 from collections import deque
 
 class Sender:
-    def __init__(self):
+    def __init__(self, address : tuple, authkey : str):
         self.run = False
         self.senderThread = None
         self.queue = deque(maxlen=1024)
@@ -15,7 +13,8 @@ class Sender:
         self.cond = threading.Condition()
         self.lock = threading.Lock()
         self.conn = None
-        self.address = (config.ADDRESS, config.PORT)     # family is deduced to be 'AF_INET'
+        self.address = address #(config.ADDRESS, config.PORT)     # family is deduced to be 'AF_INET'
+        self.authkey = authkey
         
     def stop(self):
         self.run = False
@@ -59,7 +58,7 @@ class Sender:
         while self.run: 
             try:
                 LOGGER.debug(f"Connecting to {self.address}")
-                self.conn = Client(self.address, authkey = config.AUTHKEY)
+                self.conn = Client(address=self.address, authkey=self.authkey)
                 self.sendQueue()
                 self.conn.close()
             except ConnectionError as e:
